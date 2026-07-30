@@ -35,10 +35,7 @@
   }
 })();
 
-// ---------- Full-viewport particle field ----------
-// Independent of the Spline scene's own effects — guarantees particles cover
-// the whole hero, regardless of how the embedded scene's internal particle
-// system (if any) is authored/bounded inside Spline itself.
+// ---------- Full-viewport particle field (ambient background) ----------
 (function particleField() {
   const canvas = document.getElementById('particle-field');
   const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -100,50 +97,137 @@
   requestAnimationFrame(draw);
 })();
 
-// ---------- Scroll-driven camera orbit ----------
-// Orbits the brain (via a CSS 3D perspective rotation of its container)
-// instead of shrinking it. This rotates the rendered plane of the Spline
-// viewer itself; it does not move Spline's internal 3D camera object (that
-// would need the @splinetool/runtime API against this specific scene's
-// actual camera/object names, which isn't verifiable without live-testing
-// against the real scene) but reads as a convincing orbit as you scroll.
-(function scrollOrbitBrain() {
-  const heroScroll = document.querySelector('.hero-scroll');
-  const stage = document.querySelector('.brain-stage');
-  const copy = document.querySelector('.hero-copy');
+// ---------- Neural-network brain (pure Three.js, no external service) ----------
+(function initBrain() {
+  const canvas = document.getElementById('brain-canvas');
+  const hero = document.querySelector('.hero');
+  if (!canvas || !hero) return;
+
   const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-  if (!heroScroll || !stage || reduceMotion) return;
+  import('https://unpkg.com/three@0.185.1/build/three.module.js').then((THREE) => {
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(45, hero.clientWidth / hero.clientHeight, 0.1, 2000);
 
-  const MAX_ROTATE_Y = 55; // degrees, full left-right swing across the scroll
-  const MAX_ROTATE_X = 12; // degrees, subtle vertical tilt
-  let ticking = false;
+    const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    renderer.setSize(hero.clientWidth, hero.clientHeight);
 
-  function update() {
-    const rect = heroScroll.getBoundingClientRect();
-    const scrollable = heroScroll.offsetHeight - window.innerHeight;
-    const progress = Math.min(Math.max(-rect.top / scrollable, 0), 1);
+    const brain = new THREE.Group();
+    scene.add(brain);
 
-    const rotateY = progress * MAX_ROTATE_Y;
-    const rotateX = Math.sin(progress * Math.PI) * -MAX_ROTATE_X;
-    const copyOpacity = 1 - Math.min(progress / 0.4, 1);
-    const copyShift = progress * 40;
+    // --- nodes: evenly distributed across a sphere (Fibonacci lattice) ---
+    const NODE_COUNT = 220;
+    const RADIUS = 140;
+    const goldenAngle = Math.PI * (3 - Math.sqrt(5));
+    const nodePositions = [];
 
-    stage.style.transform = `rotateY(${rotateY}deg) rotateX(${rotateX}deg)`;
-    copy.style.opacity = `${copyOpacity}`;
-    copy.style.transform = `translateY(${-copyShift}px)`;
-
-    ticking = false;
-  }
-
-  function onScroll() {
-    if (!ticking) {
-      requestAnimationFrame(update);
-      ticking = true;
+    for (let i = 0; i < NODE_COUNT; i++) {
+      const y = 1 - (i / (NODE_COUNT - 1)) * 2;
+      const radiusAtY = Math.sqrt(Math.max(0, 1 - y * y));
+      const theta = goldenAngle * i;
+      const jitter = 1 + (Math.random() - 0.5) * 0.12;
+      nodePositions.push(
+        new THREE.Vector3(Math.cos(theta) * radiusAtY, y, Math.sin(theta) * radiusAtY).multiplyScalar(RADIUS * jitter)
+      );
     }
-  }
 
-  window.addEventListener('scroll', onScroll, { passive: true });
-  window.addEventListener('resize', onScroll);
-  update();
+    function makeGlowTexture() {
+      const size = 128;
+      const c = document.createElement('canvas');
+      c.width = c.height = size;
+      const ctx = c.getContext('2d');
+      const grad = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
+      grad.addColorStop(0, 'rgba(255,255,255,1)');
+      grad.addColorStop(0.4, 'rgba(199,248,254,0.8)');
+      grad.addColorStop(1, 'rgba(80,232,244,0)');
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, size, size);
+      return new THREE.CanvasTexture(c);
+    }
+
+    const nodeGeometry = new THREE.BufferGeometry().setFromPoints(nodePositions);
+    const nodeMaterial = new THREE.PointsMaterial({
+      size: 10,
+      map: makeGlowTexture(),
+      transparent: true,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      color: 0x9beef6,
+    });
+    brain.add(new THREE.Points(nodeGeometry, nodeMaterial));
+
+    // --- connections: link each node to its nearest few neighbors ---
+    const MAX_LINKS_PER_NODE = 3;
+    const MAX_LINK_DIST = RADIUS * 0.55;
+    const linePositions = [];
+
+    for (let i = 0; i < nodePositions.length; i++) {
+      const distances = [];
+      for (let j = 0; j < nodePositions.length; j++) {
+        if (i === j) continue;
+        const d = nodePositions[i].distanceTo(nodePositions[j]);
+        if (d < MAX_LINK_DIST) distances.push([d, j]);
+      }
+      distances.sort((a, b) => a[0] - b[0]);
+      for (let k = 0; k < Math.min(MAX_LINKS_PER_NODE, distances.length); k++) {
+        const j = distances[k][1];
+        if (j > i) {
+          linePositions.push(nodePositions[i].x, nodePositions[i].y, nodePositions[i].z);
+          linePositions.push(nodePositions[j].x, nodePositions[j].y, nodePositions[j].z);
+        }
+      }
+    }
+
+    const lineGeometry = new THREE.BufferGeometry();
+    lineGeometry.setAttribute('position', new THREE.Float32BufferAttribute(linePositions, 3));
+    const lineMaterial = new THREE.LineBasicMaterial({
+      color: 0x50e8f4,
+      transparent: true,
+      opacity: 0.18,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    });
+    brain.add(new THREE.LineSegments(lineGeometry, lineMaterial));
+
+    // --- continuous ambient camera orbit (always on, independent of scroll) ---
+    const ORBIT_RADIUS = 420;
+    const ORBIT_SPEED = 0.12; // radians per second
+    const ORBIT_TILT = 0.18;
+
+    function resize() {
+      const w = hero.clientWidth;
+      const h = hero.clientHeight;
+      camera.aspect = w / h;
+      camera.updateProjectionMatrix();
+      renderer.setSize(w, h);
+      if (reduceMotion) renderer.render(scene, camera);
+    }
+    window.addEventListener('resize', resize);
+
+    const clock = new THREE.Clock();
+
+    if (reduceMotion) {
+      camera.position.set(0, 0, ORBIT_RADIUS);
+      camera.lookAt(0, 0, 0);
+      resize();
+    } else {
+      resize();
+      const animate = () => {
+        const t = clock.getElapsedTime();
+        const angle = t * ORBIT_SPEED;
+        camera.position.x = Math.sin(angle) * ORBIT_RADIUS;
+        camera.position.z = Math.cos(angle) * ORBIT_RADIUS;
+        camera.position.y = Math.sin(angle * 0.5) * ORBIT_RADIUS * ORBIT_TILT;
+        camera.lookAt(0, 0, 0);
+        brain.rotation.y = t * 0.02;
+
+        renderer.render(scene, camera);
+        requestAnimationFrame(animate);
+      };
+      animate();
+    }
+  }).catch((err) => {
+    console.error('[brain] Failed to load three.js:', err);
+  });
 })();
