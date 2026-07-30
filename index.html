@@ -12,13 +12,81 @@
   <div id="bokeh-bg" aria-hidden="true"></div>
 
   <header class="site-header">
-    <a class="logo" href="#top">THE WHITE MATTER</a>
+    <a class="logo" href="#top">The White Matter</a>
+
+    <nav class="site-nav">
+      <a href="#platform">Platform</a>
+      <a href="#how-it-works">How It Works</a>
+      <a href="#industries">Industries</a>
+      <a href="#blog">Blog</a>
+    </nav>
+
+    <div class="nav-actions">
+      <a class="nav-phone" href="tel:+15550000000" aria-label="Call us">
+        <svg class="icon-phone" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M4 4h4l2 5-2.5 2.5a12 12 0 0 0 6 6L16 15l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 2 6a2 2 0 0 1 2-2Z"/>
+        </svg>
+        <span>+1 (555) 000-0000</span>
+      </a>
+
+      <div class="trust-badges">
+        <div class="badge">
+          <svg class="badge-icon" viewBox="0 0 64 64">
+            <g class="laurel-branch">
+              <ellipse cx="14" cy="10" rx="3" ry="6" transform="rotate(-20 14 10)"/>
+              <ellipse cx="10" cy="18" rx="3" ry="6.5" transform="rotate(-8 10 18)"/>
+              <ellipse cx="8" cy="27" rx="3" ry="7" transform="rotate(4 8 27)"/>
+              <ellipse cx="9" cy="36" rx="3" ry="7" transform="rotate(16 9 36)"/>
+              <ellipse cx="13" cy="44" rx="3" ry="6.5" transform="rotate(30 13 44)"/>
+              <ellipse cx="19" cy="50" rx="3" ry="6" transform="rotate(45 19 50)"/>
+            </g>
+            <g class="laurel-branch" transform="scale(-1,1) translate(-64,0)">
+              <ellipse cx="14" cy="10" rx="3" ry="6" transform="rotate(-20 14 10)"/>
+              <ellipse cx="10" cy="18" rx="3" ry="6.5" transform="rotate(-8 10 18)"/>
+              <ellipse cx="8" cy="27" rx="3" ry="7" transform="rotate(4 8 27)"/>
+              <ellipse cx="9" cy="36" rx="3" ry="7" transform="rotate(16 9 36)"/>
+              <ellipse cx="13" cy="44" rx="3" ry="6.5" transform="rotate(30 13 44)"/>
+              <ellipse cx="19" cy="50" rx="3" ry="6" transform="rotate(45 19 50)"/>
+            </g>
+          </svg>
+          <span class="badge-label">Placeholder<br>Award</span>
+        </div>
+        <div class="badge">
+          <svg class="badge-icon" viewBox="0 0 64 64">
+            <g class="laurel-branch">
+              <ellipse cx="14" cy="10" rx="3" ry="6" transform="rotate(-20 14 10)"/>
+              <ellipse cx="10" cy="18" rx="3" ry="6.5" transform="rotate(-8 10 18)"/>
+              <ellipse cx="8" cy="27" rx="3" ry="7" transform="rotate(4 8 27)"/>
+              <ellipse cx="9" cy="36" rx="3" ry="7" transform="rotate(16 9 36)"/>
+              <ellipse cx="13" cy="44" rx="3" ry="6.5" transform="rotate(30 13 44)"/>
+              <ellipse cx="19" cy="50" rx="3" ry="6" transform="rotate(45 19 50)"/>
+            </g>
+            <g class="laurel-branch" transform="scale(-1,1) translate(-64,0)">
+              <ellipse cx="14" cy="10" rx="3" ry="6" transform="rotate(-20 14 10)"/>
+              <ellipse cx="10" cy="18" rx="3" ry="6.5" transform="rotate(-8 10 18)"/>
+              <ellipse cx="8" cy="27" rx="3" ry="7" transform="rotate(4 8 27)"/>
+              <ellipse cx="9" cy="36" rx="3" ry="7" transform="rotate(16 9 36)"/>
+              <ellipse cx="13" cy="44" rx="3" ry="6.5" transform="rotate(30 13 44)"/>
+              <ellipse cx="19" cy="50" rx="3" ry="6" transform="rotate(45 19 50)"/>
+            </g>
+          </svg>
+          <span class="badge-label">Placeholder<br>Recognition</span>
+        </div>
+      </div>
+
+      <a class="cta-pill" href="#book-a-call">Book a Call</a>
+    </div>
   </header>
 
   <main id="top">
     <section class="hero">
       <canvas id="particle-field" aria-hidden="true"></canvas>
       <canvas id="brain-canvas" aria-hidden="true"></canvas>
+
+      <div class="shape-toggle" role="group" aria-label="Brain shape preview (temporary, for comparison)">
+        <button type="button" data-shape="brain" class="active">Brain</button>
+        <button type="button" data-shape="eye">Eye</button>
+      </div>
     </section>
   </main>
 

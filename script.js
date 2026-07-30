@@ -105,6 +105,120 @@
 
   const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
+  const NODE_COUNT = 260;
+  const RADIUS = 175;
+  const DEPTH = RADIUS * 0.4;
+  const MAX_LINKS_PER_NODE = 3;
+  const MAX_LINK_DIST = RADIUS * 0.5;
+  const MASK_SIZE = 420;
+
+  // --- silhouettes: nodes are sampled from inside these 2D shapes, then
+  // given depth proportional to a blurred "thickness" pass, so the point
+  // cloud reads as a solid organic form rather than a flat outline. ---
+  function drawBrainSilhouette(ctx, size) {
+    ctx.save();
+    ctx.translate(size / 2, size / 2);
+    ctx.fillStyle = '#fff';
+    const scale = size * 0.42;
+
+    function hemisphere(sign) {
+      ctx.beginPath();
+      const bumps = [
+        [0.06, -0.95], [0.55, -0.86], [0.82, -0.64], [0.96, -0.32],
+        [0.90, 0.04], [0.95, 0.32], [0.82, 0.56], [0.55, 0.72],
+        [0.28, 0.80], [0.10, 0.62],
+      ];
+      ctx.moveTo(sign * 0.06 * scale, -0.95 * scale);
+      for (let i = 1; i < bumps.length; i++) {
+        const [bx, by] = bumps[i];
+        const [px, py] = bumps[i - 1];
+        const cx = sign * (bx * 1.04) * scale;
+        const cy = ((py + by) / 2) * scale;
+        ctx.quadraticCurveTo(cx, cy, sign * bx * scale, by * scale);
+      }
+      ctx.quadraticCurveTo(sign * 0.05 * scale, 0, sign * 0.06 * scale, -0.95 * scale);
+      ctx.closePath();
+      ctx.fill();
+    }
+    hemisphere(-1);
+    hemisphere(1);
+
+    ctx.beginPath();
+    ctx.ellipse(0, 0.92 * scale, 0.34 * scale, 0.22 * scale, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.beginPath();
+    ctx.moveTo(-0.08 * scale, 0.95 * scale);
+    ctx.lineTo(0.08 * scale, 0.95 * scale);
+    ctx.lineTo(0.05 * scale, 1.18 * scale);
+    ctx.lineTo(-0.05 * scale, 1.18 * scale);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  }
+
+  function drawEyeSilhouette(ctx, size) {
+    ctx.save();
+    ctx.translate(size / 2, size / 2);
+    ctx.fillStyle = '#fff';
+    const w = size * 0.46;
+
+    ctx.beginPath();
+    ctx.moveTo(-w, 0);
+    ctx.quadraticCurveTo(-w * 0.55, -w * 0.62, 0, -w * 0.5);
+    ctx.quadraticCurveTo(w * 0.55, -w * 0.62, w, 0);
+    ctx.quadraticCurveTo(w * 0.55, w * 0.42, 0, w * 0.34);
+    ctx.quadraticCurveTo(-w * 0.55, w * 0.42, -w, 0);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.globalCompositeOperation = 'destination-out';
+    ctx.beginPath();
+    ctx.arc(0, -w * 0.04, w * 0.32, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalCompositeOperation = 'source-over';
+
+    ctx.beginPath();
+    ctx.arc(0, -w * 0.04, w * 0.14, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  const SHAPES = { brain: drawBrainSilhouette, eye: drawEyeSilhouette };
+
+  function samplePoints(THREE, drawFn, count) {
+    const maskCanvas = document.createElement('canvas');
+    maskCanvas.width = maskCanvas.height = MASK_SIZE;
+    const mctx = maskCanvas.getContext('2d', { willReadFrequently: true });
+    drawFn(mctx, MASK_SIZE);
+    const sharp = mctx.getImageData(0, 0, MASK_SIZE, MASK_SIZE).data;
+
+    const blurCanvas = document.createElement('canvas');
+    blurCanvas.width = blurCanvas.height = MASK_SIZE;
+    const bctx = blurCanvas.getContext('2d', { willReadFrequently: true });
+    bctx.filter = 'blur(18px)';
+    drawFn(bctx, MASK_SIZE);
+    const blurred = bctx.getImageData(0, 0, MASK_SIZE, MASK_SIZE).data;
+
+    const points = [];
+    let attempts = 0;
+    const maxAttempts = count * 80;
+    while (points.length < count && attempts < maxAttempts) {
+      attempts++;
+      const px = Math.floor(Math.random() * MASK_SIZE);
+      const py = Math.floor(Math.random() * MASK_SIZE);
+      const idx = (py * MASK_SIZE + px) * 4 + 3;
+      if (sharp[idx] > 128) {
+        const thickness = blurred[idx] / 255;
+        const x = ((px - MASK_SIZE / 2) / MASK_SIZE) * RADIUS * 2;
+        const y = -((py - MASK_SIZE / 2) / MASK_SIZE) * RADIUS * 2;
+        const z = (Math.random() * 2 - 1) * DEPTH * thickness;
+        points.push(new THREE.Vector3(x, y, z));
+      }
+    }
+    return points;
+  }
+
   import('https://unpkg.com/three@0.185.1/build/three.module.js').then((THREE) => {
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(45, hero.clientWidth / hero.clientHeight, 0.1, 2000);
@@ -112,25 +226,6 @@
     const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     renderer.setSize(hero.clientWidth, hero.clientHeight);
-
-    const brain = new THREE.Group();
-    scene.add(brain);
-
-    // --- nodes: evenly distributed across a sphere (Fibonacci lattice) ---
-    const NODE_COUNT = 220;
-    const RADIUS = 140;
-    const goldenAngle = Math.PI * (3 - Math.sqrt(5));
-    const nodePositions = [];
-
-    for (let i = 0; i < NODE_COUNT; i++) {
-      const y = 1 - (i / (NODE_COUNT - 1)) * 2;
-      const radiusAtY = Math.sqrt(Math.max(0, 1 - y * y));
-      const theta = goldenAngle * i;
-      const jitter = 1 + (Math.random() - 0.5) * 0.12;
-      nodePositions.push(
-        new THREE.Vector3(Math.cos(theta) * radiusAtY, y, Math.sin(theta) * radiusAtY).multiplyScalar(RADIUS * jitter)
-      );
-    }
 
     function makeGlowTexture() {
       const size = 128;
@@ -145,50 +240,78 @@
       ctx.fillRect(0, 0, size, size);
       return new THREE.CanvasTexture(c);
     }
+    const glowTexture = makeGlowTexture();
 
-    const nodeGeometry = new THREE.BufferGeometry().setFromPoints(nodePositions);
-    const nodeMaterial = new THREE.PointsMaterial({
-      size: 10,
-      map: makeGlowTexture(),
-      transparent: true,
-      depthWrite: false,
-      blending: THREE.AdditiveBlending,
-      color: 0x9beef6,
-    });
-    brain.add(new THREE.Points(nodeGeometry, nodeMaterial));
+    function buildBrainGroup(shapeName) {
+      const drawFn = SHAPES[shapeName] || SHAPES.brain;
+      const nodePositions = samplePoints(THREE, drawFn, NODE_COUNT);
 
-    // --- connections: link each node to its nearest few neighbors ---
-    const MAX_LINKS_PER_NODE = 3;
-    const MAX_LINK_DIST = RADIUS * 0.55;
-    const linePositions = [];
+      const group = new THREE.Group();
 
-    for (let i = 0; i < nodePositions.length; i++) {
-      const distances = [];
-      for (let j = 0; j < nodePositions.length; j++) {
-        if (i === j) continue;
-        const d = nodePositions[i].distanceTo(nodePositions[j]);
-        if (d < MAX_LINK_DIST) distances.push([d, j]);
-      }
-      distances.sort((a, b) => a[0] - b[0]);
-      for (let k = 0; k < Math.min(MAX_LINKS_PER_NODE, distances.length); k++) {
-        const j = distances[k][1];
-        if (j > i) {
-          linePositions.push(nodePositions[i].x, nodePositions[i].y, nodePositions[i].z);
-          linePositions.push(nodePositions[j].x, nodePositions[j].y, nodePositions[j].z);
+      const nodeGeometry = new THREE.BufferGeometry().setFromPoints(nodePositions);
+      const nodeMaterial = new THREE.PointsMaterial({
+        size: 10,
+        map: glowTexture,
+        transparent: true,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+        color: 0x9beef6,
+      });
+      group.add(new THREE.Points(nodeGeometry, nodeMaterial));
+
+      const linePositions = [];
+      for (let i = 0; i < nodePositions.length; i++) {
+        const distances = [];
+        for (let j = 0; j < nodePositions.length; j++) {
+          if (i === j) continue;
+          const d = nodePositions[i].distanceTo(nodePositions[j]);
+          if (d < MAX_LINK_DIST) distances.push([d, j]);
+        }
+        distances.sort((a, b) => a[0] - b[0]);
+        for (let k = 0; k < Math.min(MAX_LINKS_PER_NODE, distances.length); k++) {
+          const j = distances[k][1];
+          if (j > i) {
+            linePositions.push(nodePositions[i].x, nodePositions[i].y, nodePositions[i].z);
+            linePositions.push(nodePositions[j].x, nodePositions[j].y, nodePositions[j].z);
+          }
         }
       }
+
+      const lineGeometry = new THREE.BufferGeometry();
+      lineGeometry.setAttribute('position', new THREE.Float32BufferAttribute(linePositions, 3));
+      const lineMaterial = new THREE.LineBasicMaterial({
+        color: 0x50e8f4,
+        transparent: true,
+        opacity: 0.18,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+      });
+      group.add(new THREE.LineSegments(lineGeometry, lineMaterial));
+
+      return group;
     }
 
-    const lineGeometry = new THREE.BufferGeometry();
-    lineGeometry.setAttribute('position', new THREE.Float32BufferAttribute(linePositions, 3));
-    const lineMaterial = new THREE.LineBasicMaterial({
-      color: 0x50e8f4,
-      transparent: true,
-      opacity: 0.18,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
+    function disposeGroup(group) {
+      group.traverse((obj) => {
+        if (obj.geometry) obj.geometry.dispose();
+        if (obj.material) obj.material.dispose();
+      });
+    }
+
+    let brain = buildBrainGroup('brain');
+    scene.add(brain);
+
+    document.querySelectorAll('.shape-toggle button').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const shape = btn.dataset.shape;
+        document.querySelectorAll('.shape-toggle button').forEach((b) => b.classList.toggle('active', b === btn));
+        scene.remove(brain);
+        disposeGroup(brain);
+        brain = buildBrainGroup(shape);
+        scene.add(brain);
+        if (reduceMotion) renderer.render(scene, camera);
+      });
     });
-    brain.add(new THREE.LineSegments(lineGeometry, lineMaterial));
 
     // --- continuous ambient camera orbit (always on, independent of scroll) ---
     const ORBIT_RADIUS = 420;
